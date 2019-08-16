@@ -40,6 +40,7 @@ type server struct {
 	OnMessage   func(fd int64, data []byte)
 	OnHeartBeat func(fd int64)
 	OnClose     func(fd int64)
+	OnTimeout   func(fd int64)
 }
 
 func NewServer(port int, path string, timeout time.Duration, heartbeat time.Duration, isWss bool, certFile, keyFile string) *server {
@@ -69,6 +70,15 @@ func (s *server) GetLog() string {
 
 func (s *server) Send(fd int64, data []byte) error {
 	return wsutil.WriteServerMessage(s.conns[fd], 1, data)
+}
+
+func (s *server) Boardcast(fd int64, data []byte) error {
+	for _, c := range s.conns {
+		if err := wsutil.WriteServerMessage(c, 1, data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *server) connect(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +133,7 @@ func (s *server) receive(fd int64, conn net.Conn) {
 		case <-h.C:
 			s.heartbeat(fd)
 		case <-t.C:
+			s.timeout(fd)
 			s.close(fd)
 			fmt.Println("Time out")
 			break
@@ -136,6 +147,15 @@ func (s *server) heartbeat(fd int64) {
 	}
 	if s.OnHeartBeat != nil {
 		s.OnHeartBeat(fd)
+	}
+}
+
+func (s *server) timeout(fd int64) {
+	if s.conns[fd] == nil {
+		return
+	}
+	if s.OnTimeout != nil {
+		s.OnTimeout(fd)
 	}
 }
 
